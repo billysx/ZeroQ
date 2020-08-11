@@ -44,8 +44,8 @@ class UniformDataset(Dataset):
 
 def getRandomData(dataset='cifar10', batch_size=512, for_inception=False):
     """
-    get random sample dataloader 
-    dataset: name of the dataset 
+    get random sample dataloader
+    dataset: name of the dataset
     batch_size: the batch size of random data
     for_inception: whether the data is for Inception because inception has input size 299 rather than 224
     """
@@ -73,8 +73,8 @@ def getTestData(dataset='imagenet',
                 path='data/imagenet',
                 for_inception=False):
     """
-    Get dataloader of testset 
-    dataset: name of the dataset 
+    Get dataloader of testset
+    dataset: name of the dataset
     batch_size: the batch size of random data
     path: the path to the data
     for_inception: whether the data is for Inception because inception has input size 299 rather than 224
@@ -97,16 +97,62 @@ def getTestData(dataset='imagenet',
                                  num_workers=32)
         return test_loader
     elif dataset == 'cifar10':
-        data_dir = '/rscratch/yaohuic/data/'
+        data_dir = '/scratch/shixing/data/'
         normalize = transforms.Normalize(mean=(0.4914, 0.4822, 0.4465),
                                          std=(0.2023, 0.1994, 0.2010))
         transform_test = transforms.Compose([transforms.ToTensor(), normalize])
 
         test_dataset = datasets.CIFAR10(root=data_dir,
                                         train=False,
+                                        download=True,
                                         transform=transform_test)
         test_loader = DataLoader(test_dataset,
                                  batch_size=batch_size,
                                  shuffle=False,
                                  num_workers=32)
         return test_loader
+
+
+def getTrainData(dataset='imagenet',
+                batch_size=1024,
+                path='data/imagenet',
+                for_inception=False):
+    """
+    Get dataloader of testset
+    dataset: name of the dataset
+    batch_size: the batch size of random data
+    path: the path to the data
+    for_inception: whether the data is for Inception because inception has input size 299 rather than 224
+    """
+    if dataset == 'imagenet':
+        input_size = 299 if for_inception else 224
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        test_dataset = datasets.ImageFolder(
+            path + 'train',
+            transforms.Compose([
+                transforms.Resize(int(input_size / 0.875)),
+                transforms.CenterCrop(input_size),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+        test_loader = DataLoader(train_dataset,
+                                 batch_size=batch_size,
+                                 shuffle=False,
+                                 num_workers=32)
+        return test_loader
+    elif dataset == 'cifar10':
+        data_dir  = '/scratch/shixing/data/'
+        normalize = transforms.Normalize(mean=(0.4914, 0.4822, 0.4465),
+                                         std=(0.2023, 0.1994, 0.2010))
+        train_transform = transforms.Compose([transforms.ToTensor(), normalize])
+
+        train_set = datasets.CIFAR10(root=data_dir,
+                                        train=True,
+                                        download=True,
+                                        transform=train_transform)
+        train_loader = DataLoader(train_set,
+                                 batch_size=batch_size,
+                                 shuffle=False,
+                                 num_workers=32)
+        return train_loader

@@ -136,4 +136,5 @@ class AsymmetricQuantFunction(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        raise NotImplementedError
+        # raise NotImplementedError
+        return grad_output.clone(), None, None, None

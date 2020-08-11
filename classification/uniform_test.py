@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # Load validation data
     test_loader = getTestData(args.dataset,
                               batch_size=args.test_batch_size,
-                              path='./data/imagenet/',
+                              path='./data/imagenet12/',
                               for_inception=args.model.startswith('inception'))
     # Generate distilled data
     dataloader = getDistilData(
