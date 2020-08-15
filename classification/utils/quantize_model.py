@@ -26,7 +26,7 @@ from pytorchcv.models.common import ConvBlock
 from pytorchcv.models.shufflenetv2 import ShuffleUnit, ShuffleInitBlock
 
 
-def quantize_model(model):
+def quantize_model(model, integer_only=True):
     """
     Recursively quantize a pretrained single-precision model to int8 quantized model
     model: pretrained single-precision model
@@ -34,17 +34,26 @@ def quantize_model(model):
 
     # quantize convolutional and linear layers to 8-bit
     if type(model) == nn.Conv2d:
-        quant_mod = Quant_Conv2d(weight_bit=8)
+        if integer_only:
+            quant_mod = Quant_Conv2d_Int(weight_bit=8)
+        else:
+            quant_mod = Quant_Conv2d(weight_bit=8)
         quant_mod.set_param(model)
         return quant_mod
     elif type(model) == nn.Linear:
-        quant_mod = Quant_Linear(weight_bit=8)
+        if integer_only:
+            quant_mod = Quant_Linear_Int(weight_bit=8)
+        else:
+            quant_mod = Quant_Linear(weight_bit=8)
         quant_mod.set_param(model)
         return quant_mod
 
     # quantize all the activation to 8-bit
     elif type(model) == nn.ReLU or type(model) == nn.ReLU6:
-        return nn.Sequential(*[model, QuantAct(activation_bit=8)])
+        if integer_only:
+            return nn.Sequential(*[model, QuantAct_Int(activation_bit=8)])
+        else:
+            return nn.Sequential(*[model, QuantAct(activation_bit=8)])
 
     # recursively use the quantized module to replace the single-precision module
     elif type(model) == nn.Sequential:

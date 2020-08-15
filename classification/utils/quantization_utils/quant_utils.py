@@ -56,6 +56,7 @@ def linear_quantize(input, scale, zero_point, inplace=False):
     if inplace:
         input.mul_(scale).sub_(zero_point).round_()
         return input
+    print("before quantize",input.shape)
     return torch.round(scale * input - zero_point)
 
 
@@ -112,7 +113,7 @@ class AsymmetricQuantFunction(Function):
     Currently only support inference, but not support back-propagation.
     """
     @staticmethod
-    def forward(ctx, x, k, x_min=None, x_max=None):
+    def forward(ctx, x, k, x_min=None, x_max=None, integer_only=True):
         """
         x: single-precision value to be quantized
         k: bit-setting for x
@@ -132,9 +133,34 @@ class AsymmetricQuantFunction(Function):
                                     scale,
                                     zero_point,
                                     inplace=False)
-        return torch.autograd.Variable(quant_x)
+        if integer_only == True:
+            return torch.autograd.Variable(quant_x), scale, zero_point
+        else:
+            return torch.autograd.Variable(quant_x)
 
     @staticmethod
     def backward(ctx, grad_output):
         # raise NotImplementedError
         return grad_output.clone(), None, None, None
+
+
+
+
+def quantize_int(x, k, x_min=None, x_max=None):
+    if x_min is None or x_max is None or (sum(x_min == x_max) == 1 and x_min.numel() == 1):
+        x_min, x_max = x.min(), x.max()
+    scale, zero_point = asymmetric_linear_quantization_params(k, x_min, x_max)
+    new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
+    n = 2**(k - 1)
+    new_quant_x = torch.clamp(new_quant_x, -n, n - 1)
+    if len(scale.shape) == 0:
+        return new_quant_x, torch.Tensor([scale]), torch.Tensor([zero_point])
+    return new_quant_x, scale, zero_point
+
+def dequantize_int(r, scale_r, scale_x, scale_w, zero_point_r):
+    M = scale_x * scale_w / scale_r
+    M_0 = M * 2**31
+    r = ((r * M0) << 31)  + zero_point_r
+    return r
+
+
