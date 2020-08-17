@@ -261,11 +261,7 @@ class Quant_Linear_Int(Module):
         except AttributeError:
             self.bias = None
 
-    def forward(self, inputs):
-        if isinstance(inputs, tuple):
-            x, activation_bit, x_min, x_max = inputs
-        else:
-            x = inputs
+    def forward(self, x):
         """
         using quantized weights to forward activation x
         """
@@ -273,27 +269,27 @@ class Quant_Linear_Int(Module):
         x_transform = w.data.detach()
         w_min = x_transform.min(dim=1).values
         w_max = x_transform.max(dim=1).values
+
+        x_max = x.data.detach().max()
+        n = 2**(self.weight_bit)
+        scale_x = (n-1) / torch.clamp(x_max, min=1e-8)
+
         if not self.full_precision_flag:
+            # x is asymmetric quantization with range [0,255]
+            new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
             new_quant_w, scale_w, zero_point_w = quantize_int(self.weight, self.weight_bit, w_min, w_max)
-            new_quant_x, scale_x, zero_point_x = quantize_int(x, activation_bit, x_min, x_max)
-            new_quant_b = linear_quantize(self.bias, scale_w*scale_x, 0, inplace=False)
+
+            # bias is symmetric quantization with range [-128,127]
+            new_quant_b = linear_quantize(self.bias, scale_w*scale_x, 0)
+            new_quant_b = torch.clamp(new_quant_b, -n - 1, n)
+
             # TODO bias quantization
-            mult_res = F.linear(new_quant_x.int(), weight=new_quant_w.int(), bias=self.bias)
-            res = (zero_point_w*zero_point_x) - zero_point_w * new_quant_x.sum(-2) - zero_point_w * new_quant_x.sum(-1) + mult_res + new_quant_b
+            # print(x.shape, new_quant_x.shape, new_quant_w.shape, new_quant_b.shape)
+            mult_res = F.linear(new_quant_x, weight=new_quant_w, bias=new_quant_b)
 
-            print(f"new_quant_x:{new_quant_x.shape}")
-            print(f"new_quant_w:{new_quant_w.shape}")
-            print(f"scale_x:{scale_x.shape}")
-            print(f"scale_w:{scale_w.shape}")
-            print(f"zero_point_x:{zero_point_x.shape}")
-            print(f"zero_point_w:{zero_point_w.shape}")
-            print(f"multiplication result:{mult_res.shape}")
-            exit()
+            res = mult_res + zero_point_w * new_quant_x.sum(-1).unsqueeze(-1).expand_as(mult_res)
 
-            r_min, r_max = res.min(), res.max()
-            scale_r, zero_point_r = asymmetric_linear_quantization_params(k, r_min, r_max)
-            quant_r = dequantize_int(res, scale_r, scale_w, scale_x, zero_point_r)
-            return quant_r
+            return res / scale_x / scale_w
 
         else:
             w = self.weight
@@ -330,44 +326,44 @@ class Quant_Conv2d_Int(Module):
         except AttributeError:
             self.bias = None
 
-    def forward(self, inputs):
-        if isinstance(inputs, tuple):
-            print(1)
-            x, activation_bit, x_min, x_max = inputs
-        else:
-            print(0)
-            x = inputs
-            x_min, x_max = None, None
-            activation_bit = 32
+    def forward(self, x):
 
         """
         using quantized weights to forward activation x
         """
-
-        # w = self.weight
-        calc_x = nn.functional.unfold(x, kernel_size=self.kernel_size, dilation=self.dilation, stride=self.stride, padding=self.padding).transpose(1, 2)
         calc_w = self.weight
         x_transform = calc_w.data.contiguous().view(self.out_channels, -1)
-        w_min = x_transform.min(dim=1).values
         w_max = x_transform.max(dim=1).values
+        # range[-128,127]
+        n_w = (2**(self.weight_bit-1) - 1)
+        scale_w = n_w / torch.clamp(w_max, min=1e-8)
+
+        # n_x = (2**(self.weight_bit) - 1)
+        n_x = n_w
+        x_max = x.data.detach().max()   # range[0,255]
+        scale_x = n_x / torch.clamp(x_max, min=1e-8)
+
+
         if not self.full_precision_flag:
-            print("-----w-----")
-            new_quant_w, scale_w, zero_point_w = quantize_int(calc_w, self.weight_bit, w_min, w_max)
-            print("-----x-----")
-            new_quant_x, scale_x, zero_point_x = quantize_int(calc_x, activation_bit, x_min, x_max)
-            new_quant_b = linear_quantize(self.bias, scale_w*scale_x, 0, inplace=False)
+            # scale-only asymmetric
+            new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
+            new_quant_x = torch.clamp(new_quant_x, -n_x - 1, n_x)
+            # scale-only symmetric
+            new_quant_w = linear_quantize(self.weight, scale_w, torch.zeros(1).cuda())
+            new_quant_w = torch.clamp(new_quant_w, -n_w - 1, n_w)
+
+            if self.bias is not None:
+                new_quant_b = linear_quantize(self.bias, scale_w*scale_x, torch.zeros(1).cuda())
+                new_quant_b = torch.clamp(new_quant_b, -n_w - 1, n_w)
+            else:
+                new_quant_b = None
 
             # TODO bias quantization
-            # DONT forget to transpose(1,2) on the result
-            mult_res = torch.matmul(new_quant_x, new_quant_w.view(new_quant_w.size(0), -1).t())
+            # print(x.shape, new_quant_x.shape, new_quant_w.shape, new_quant_b.shape)
+            mult_res = F.conv2d(new_quant_x, new_quant_w, new_quant_b, self.stride, self.padding,
+                        self.dilation, self.groups)
 
-            res = (zero_point_w*zero_point_x) - zero_point_w * new_quant_x.sum(-2) - zero_point_w * new_quant_x.sum(-1) + mult_res + new_quant_b
-
-            r_min, r_max = res.min(), res.max()
-            scale_r, zero_point_r = asymmetric_linear_quantization_params(k, r_min, r_max)
-            quant_r = dequantize_int(res, scale_r, scale_w, scale_x, zero_point_r).transpose(1,2)
-
-            return quant_r
+            return mult_res / (scale_w.view(1,-1,1,1).expand_as(mult_res)) / scale_x
 
         else:
             w = self.weight

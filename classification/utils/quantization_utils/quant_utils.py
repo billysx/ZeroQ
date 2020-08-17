@@ -56,7 +56,6 @@ def linear_quantize(input, scale, zero_point, inplace=False):
     if inplace:
         input.mul_(scale).sub_(zero_point).round_()
         return input
-    print("before quantize",input.shape)
     return torch.round(scale * input - zero_point)
 
 
@@ -113,7 +112,7 @@ class AsymmetricQuantFunction(Function):
     Currently only support inference, but not support back-propagation.
     """
     @staticmethod
-    def forward(ctx, x, k, x_min=None, x_max=None, integer_only=True):
+    def forward(ctx, x, k, x_min=None, x_max=None):
         """
         x: single-precision value to be quantized
         k: bit-setting for x
@@ -133,10 +132,7 @@ class AsymmetricQuantFunction(Function):
                                     scale,
                                     zero_point,
                                     inplace=False)
-        if integer_only == True:
-            return torch.autograd.Variable(quant_x), scale, zero_point
-        else:
-            return torch.autograd.Variable(quant_x)
+        return torch.autograd.Variable(quant_x)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -158,9 +154,23 @@ def quantize_int(x, k, x_min=None, x_max=None):
     return new_quant_x, scale, zero_point
 
 def dequantize_int(r, scale_r, scale_x, scale_w, zero_point_r):
-    M = scale_x * scale_w / scale_r
+    M = scale_x
     M_0 = M * 2**31
-    r = ((r * M0) << 31)  + zero_point_r
+    r = ((r * M_0) << 31)
     return r
 
+class dequantize_int(Function):
+    """
+    Class to quantize the given floating-point values with given range and bit-setting.
+    Currently only support inference, but not support back-propagation.
+    """
+    @staticmethod
+    def forward(r, scale_r, scale_x, scale_w, zero_point_r):
+        self.M = 1 / (scale_x * scale_w)
+        M_0 = M * 2**31
+        r = ((r * M_0) << 31)
+        return r
 
+    @staticmethod
+    def backward(ctx, grad_output):
+        return self.M * grad_output.clone(), None, None, None

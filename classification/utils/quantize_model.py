@@ -51,7 +51,7 @@ def quantize_model(model, integer_only=True):
     # quantize all the activation to 8-bit
     elif type(model) == nn.ReLU or type(model) == nn.ReLU6:
         if integer_only:
-            return nn.Sequential(*[model, QuantAct_Int(activation_bit=8)])
+            return nn.Sequential(*[model, QuantAct(activation_bit=8)])
         else:
             return nn.Sequential(*[model, QuantAct(activation_bit=8)])
 
