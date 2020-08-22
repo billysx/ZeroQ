@@ -62,7 +62,6 @@ def train(model, train_loader, args):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        scheduler.step()
 
         sum_loss += loss*targets.size(0)
         correct  += predicted.eq(targets).sum().item()
@@ -71,7 +70,7 @@ def train(model, train_loader, args):
 
         bar.suffix = f'({batch_idx + 1}/{len(train_loader)}) | ETA: {bar.eta_td} | top1: {acc} | loss:{loss}'
         bar.next()
-
+    scheduler.step()
     bar.finish()
     return acc, loss
 

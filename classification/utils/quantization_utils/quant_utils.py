@@ -22,6 +22,7 @@ import math
 import numpy as np
 from torch.autograd import Function, Variable
 import torch
+import torch.nn as nn
 
 
 def clamp(input, min, max, inplace=False):
@@ -146,31 +147,61 @@ def quantize_int(x, k, x_min=None, x_max=None):
     if x_min is None or x_max is None or (sum(x_min == x_max) == 1 and x_min.numel() == 1):
         x_min, x_max = x.min(), x.max()
     scale, zero_point = asymmetric_linear_quantization_params(k, x_min, x_max)
-    new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
+    quantfunc = LinearQuantizeModule()
+    # new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
+    new_quant_x = quantfunc(x, scale, zero_point, inplace=False)
     n = 2**(k - 1)
     new_quant_x = torch.clamp(new_quant_x, -n, n - 1)
     if len(scale.shape) == 0:
         return new_quant_x, torch.Tensor([scale]), torch.Tensor([zero_point])
     return new_quant_x, scale, zero_point
 
-def dequantize_int(r, scale_r, scale_x, scale_w, zero_point_r):
-    M = scale_x
-    M_0 = M * 2**31
-    r = ((r * M_0) << 31)
-    return r
 
-class dequantize_int(Function):
-    """
-    Class to quantize the given floating-point values with given range and bit-setting.
-    Currently only support inference, but not support back-propagation.
-    """
-    @staticmethod
-    def forward(r, scale_r, scale_x, scale_w, zero_point_r):
+class LinearDequantizeModule(nn.Module):
+    def __init__(self):
+        super(LinearDequantizeModule, self).__init__()
+
+    def forward(self, x, scale_x, scale_w):
         self.M = 1 / (scale_x * scale_w)
-        M_0 = M * 2**31
-        r = ((r * M_0) << 31)
-        return r
+        M_0 = torch.round(self.M * 2**31)
+        res = ((x * M_0) << 31)
+        print(f"M:{self.M}, M_0:{M_0}")
+        print(res.sum())
+        print((x*self.M).sum())
+        exit()
+        return res
 
-    @staticmethod
-    def backward(ctx, grad_output):
+    def backward(self, grad_output):
         return self.M * grad_output.clone(), None, None, None
+
+
+class LinearQuantizeModule(nn.Module):
+    def __init__(self):
+        super(LinearQuantizeModule, self).__init__()
+
+    def forward(self, input, scale, zero_point, inplace=False):
+        """
+        Quantize single-precision input tensor to integers with the given scaling factor and zeropoint.
+        input: single-precision input tensor to be quantized
+        scale: scaling factor for quantization
+        zero_pint: shift for quantization
+        """
+
+        # reshape scale and zeropoint for convolutional weights and activation
+        self.scale      = scale
+        self.zero_point = zero_point
+        if len(input.shape) == 4:
+            scale      = scale.view(-1, 1, 1, 1)
+            zero_point = zero_point.view(-1, 1, 1, 1)
+        # reshape scale and zeropoint for linear weights
+        elif len(input.shape) == 2:
+            scale      = scale.view(-1, 1)
+            zero_point = zero_point.view(-1, 1)
+        # mapping single-precision input to integer values with the given scale and zeropoint
+        if inplace:
+            input.mul_(scale).sub_(zero_point).round_()
+            return input
+        return torch.round(scale * input - zero_point)
+
+    def backward(self, grad_output):
+        return self.scale * grad_output.clone(), None, None, None

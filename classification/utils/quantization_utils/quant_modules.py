@@ -260,6 +260,8 @@ class Quant_Linear_Int(Module):
             self.bias = Parameter(linear.bias.data.clone())
         except AttributeError:
             self.bias = None
+        self.quantfunc   = LinearQuantizeModule()
+        self.dequantfunc = LinearDequantizeModule()
 
     def forward(self, x):
         """
@@ -276,11 +278,13 @@ class Quant_Linear_Int(Module):
 
         if not self.full_precision_flag:
             # x is asymmetric quantization with range [0,255]
-            new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
+            # new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
+            new_quant_x = self.quantfunc(x, scale_x, torch.zeros(1).cuda())
             new_quant_w, scale_w, zero_point_w = quantize_int(self.weight, self.weight_bit, w_min, w_max)
 
             # bias is symmetric quantization with range [-128,127]
-            new_quant_b = linear_quantize(self.bias, scale_w*scale_x, 0)
+            # new_quant_b = linear_quantize(self.bias, scale_w*scale_x, 0)
+            new_quant_b = self.quantfunc(self.bias, scale_w*scale_x, 0)
             new_quant_b = torch.clamp(new_quant_b, -n - 1, n)
 
             # TODO bias quantization
@@ -289,7 +293,8 @@ class Quant_Linear_Int(Module):
 
             res = mult_res + zero_point_w * new_quant_x.sum(-1).unsqueeze(-1).expand_as(mult_res)
 
-            return res / scale_x / scale_w
+            # return res / scale_x / scale_w
+            return self.dequantfunc(res, scale_x, scale_w)
 
         else:
             w = self.weight
@@ -325,6 +330,8 @@ class Quant_Conv2d_Int(Module):
             self.bias = Parameter(conv.bias.data.clone())
         except AttributeError:
             self.bias = None
+        self.quantfunc   = LinearQuantizeModule()
+        self.dequantfunc = LinearDequantizeModule()
 
     def forward(self, x):
 
@@ -334,7 +341,7 @@ class Quant_Conv2d_Int(Module):
         calc_w = self.weight
         x_transform = calc_w.data.contiguous().view(self.out_channels, -1)
         w_max = x_transform.max(dim=1).values
-        # range[-128,127]
+        # range[-127,127]
         n_w = (2**(self.weight_bit-1) - 1)
         scale_w = n_w / torch.clamp(w_max, min=1e-8)
 
@@ -346,15 +353,18 @@ class Quant_Conv2d_Int(Module):
 
         if not self.full_precision_flag:
             # scale-only asymmetric
-            new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
-            new_quant_x = torch.clamp(new_quant_x, -n_x - 1, n_x)
+            # new_quant_x = linear_quantize(x, scale_x, torch.zeros(1).cuda())
+            new_quant_x = self.quantfunc(x, scale_x, torch.zeros(1).cuda())
+            new_quant_x = torch.clamp(new_quant_x, -n_x, n_x)
             # scale-only symmetric
-            new_quant_w = linear_quantize(self.weight, scale_w, torch.zeros(1).cuda())
-            new_quant_w = torch.clamp(new_quant_w, -n_w - 1, n_w)
+
+            # new_quant_w = linear_quantize(self.weight, scale_w, torch.zeros(1).cuda())
+            new_quant_w = self.quantfunc(self.weight, scale_w, torch.zeros(1).cuda())
+            new_quant_w = torch.clamp(new_quant_w, -n_w, n_w)
 
             if self.bias is not None:
                 new_quant_b = linear_quantize(self.bias, scale_w*scale_x, torch.zeros(1).cuda())
-                new_quant_b = torch.clamp(new_quant_b, -n_w - 1, n_w)
+                new_quant_b = torch.clamp(new_quant_b, -n_w, n_w)
             else:
                 new_quant_b = None
 
@@ -363,7 +373,8 @@ class Quant_Conv2d_Int(Module):
             mult_res = F.conv2d(new_quant_x, new_quant_w, new_quant_b, self.stride, self.padding,
                         self.dilation, self.groups)
 
-            return mult_res / (scale_w.view(1,-1,1,1).expand_as(mult_res)) / scale_x
+            # return mult_res / (scale_w.view(1,-1,1,1).expand_as(mult_res)) / scale_x
+            return self.dequantfunc(mult_res, scale_x, scale_w.view(1,-1,1,1) )
 
         else:
             w = self.weight

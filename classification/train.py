@@ -60,7 +60,7 @@ def arg_parse():
                         help='batch size of train data')
     parser.add_argument('--epochs',
                         type=int,
-                        default=150,
+                        default=10,
                         help="Training epochs")
     parser.add_argument('--weight_decay',
                         type=float,
@@ -79,7 +79,7 @@ def arg_parse():
                         default="model_path")
     parser.add_argument("--eval-interval",
                         type=int,
-                        default=10,
+                        default=1,
                         help="the evaluation interval during training")
     args = parser.parse_args()
     return args
@@ -114,7 +114,7 @@ if __name__ == '__main__':
                                 weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer=optimizer,
-        milestones=[40, 80, 120],
+        milestones=[3, 5, 8],
         gamma=args.lr_decay
     )
 
@@ -127,11 +127,11 @@ if __name__ == '__main__':
     quantized_model.train()
 
     best_acc = 0
-    # acc = test(quantized_model, test_loader)
+    acc = test(quantized_model, test_loader)
 
     for epoch in range(args.epochs):
         acc, loss = train(quantized_model, train_loader, args)
-        print(f"Epoch {epoch}: loss = {loss:4f}, top1_accuracy = {acc*100:4f}")
+        print(f"Epoch {epoch}: loss = {loss:4f}, top1_accuracy = {acc*100:4f}, learning_rate = {args.scheduler.get_last_lr()[0]}")
         if (epoch+1) % args.eval_interval == 0:
             acc = test(quantized_model, test_loader)
 
