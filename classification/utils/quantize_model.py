@@ -26,12 +26,14 @@ from pytorchcv.models.common import ConvBlock
 from pytorchcv.models.shufflenetv2 import ShuffleUnit, ShuffleInitBlock
 
 
-def quantize_model(model, integer_only=True):
+def quantize_model(model, integer_only=True, first_layer=False):
     """
     Recursively quantize a pretrained single-precision model to int8 quantized model
     model: pretrained single-precision model
     """
-
+    # if first_layer:
+    #     quant_mod = quantize_model(nn.Sequential(*[QuantAct(activation_bit=8), model]))
+    #     return quant_mod
     # quantize convolutional and linear layers to 8-bit
     if type(model) == nn.Conv2d:
         if integer_only:

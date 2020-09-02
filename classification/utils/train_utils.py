@@ -39,7 +39,7 @@ class CrossEntropyLabelSmooth(nn.Module):
         loss      = (-targets * log_probs).mean(0).sum()
         return loss
 
-def train(model, train_loader, args):
+def train(model, train_loader, args, test_loader):
     """
     train a model on given dataset
     """
@@ -50,11 +50,11 @@ def train(model, train_loader, args):
     loss_function = args.loss_function
     optimizer     = args.optimizer
     scheduler     = args.scheduler
+    eval_interval = 5
 
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs, targets = inputs.cuda(), targets.cuda()
         outputs = model(inputs)
-
         loss    = loss_function(outputs, targets)
         _, predicted = outputs.max(1)
         total += targets.size(0)
@@ -70,6 +70,8 @@ def train(model, train_loader, args):
 
         bar.suffix = f'({batch_idx + 1}/{len(train_loader)}) | ETA: {bar.eta_td} | top1: {acc} | loss:{loss}'
         bar.next()
+        if (batch_idx+1) % eval_interval == 0:
+            acc = test(model, test_loader)
     scheduler.step()
     bar.finish()
     return acc, loss

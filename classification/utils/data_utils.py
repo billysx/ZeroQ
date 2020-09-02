@@ -128,19 +128,20 @@ def getTrainData(dataset='imagenet',
         input_size = 299 if for_inception else 224
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
-        test_dataset = datasets.ImageFolder(
+        train_dataset = datasets.ImageFolder(
             path + 'train',
             transforms.Compose([
                 transforms.Resize(int(input_size / 0.875)),
-                transforms.CenterCrop(input_size),
+                transforms.RandomResizedCrop(input_size),
+                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 normalize,
             ]))
-        test_loader = DataLoader(train_dataset,
+        train_loader = DataLoader(train_dataset,
                                  batch_size=batch_size,
-                                 shuffle=False,
+                                 shuffle=True,
                                  num_workers=32)
-        return test_loader
+        return train_loader
     elif dataset == 'cifar10':
         data_dir  = '/scratch/shixing/data/'
         normalize = transforms.Normalize(mean=(0.4914, 0.4822, 0.4465),

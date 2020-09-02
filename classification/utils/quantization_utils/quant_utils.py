@@ -151,7 +151,7 @@ def quantize_int(x, k, x_min=None, x_max=None):
     # new_quant_x = linear_quantize(x, scale, zero_point, inplace=False)
     new_quant_x = quantfunc(x, scale, zero_point, inplace=False)
     n = 2**(k - 1)
-    new_quant_x = torch.clamp(new_quant_x, -n, n - 1)
+    # new_quant_x = torch.clamp(new_quant_x, -n, n - 1)
     if len(scale.shape) == 0:
         return new_quant_x, torch.Tensor([scale]), torch.Tensor([zero_point])
     return new_quant_x, scale, zero_point
@@ -165,10 +165,10 @@ class LinearDequantizeModule(nn.Module):
         self.M = 1 / (scale_x * scale_w)
         M_0 = torch.round(self.M * 2**31)
         res = ((x * M_0) << 31)
-        print(f"M:{self.M}, M_0:{M_0}")
-        print(res.sum())
-        print((x*self.M).sum())
-        exit()
+        # print(f"M:{self.M}, M_0:{M_0}")
+        # print(res.sum())
+        # print((x*self.M).sum())
+        # exit()
         return res
 
     def backward(self, grad_output):

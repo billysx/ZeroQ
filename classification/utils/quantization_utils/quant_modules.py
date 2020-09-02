@@ -293,8 +293,8 @@ class Quant_Linear_Int(Module):
 
             res = mult_res + zero_point_w * new_quant_x.sum(-1).unsqueeze(-1).expand_as(mult_res)
 
-            # return res / scale_x / scale_w
-            return self.dequantfunc(res, scale_x, scale_w)
+            return res / scale_x / scale_w
+            # return self.dequantfunc(res, scale_x, scale_w)
 
         else:
             w = self.weight
@@ -341,14 +341,17 @@ class Quant_Conv2d_Int(Module):
         calc_w = self.weight
         x_transform = calc_w.data.contiguous().view(self.out_channels, -1)
         w_max = x_transform.max(dim=1).values
+        w_min = x_transform.min(dim=1).values
         # range[-127,127]
         n_w = (2**(self.weight_bit-1) - 1)
-        scale_w = n_w / torch.clamp(w_max, min=1e-8)
+        scale_w = n_w / torch.clamp( torch.max(abs(w_max), abs(w_min)), min=1e-8)
+        # scale_w = torch.ones(scale_w.shape).cuda()
 
         # n_x = (2**(self.weight_bit) - 1)
         n_x = n_w
-        x_max = x.data.detach().max()   # range[0,255]
-        scale_x = n_x / torch.clamp(x_max, min=1e-8)
+        x_max = x.data.detach().max()
+        x_min = x.data.detach().min()
+        scale_x = n_x / torch.clamp( max(abs(x_max), abs(x_min)), min=1e-8)
 
 
         if not self.full_precision_flag:
@@ -363,7 +366,7 @@ class Quant_Conv2d_Int(Module):
             new_quant_w = torch.clamp(new_quant_w, -n_w, n_w)
 
             if self.bias is not None:
-                new_quant_b = linear_quantize(self.bias, scale_w*scale_x, torch.zeros(1).cuda())
+                new_quant_b = self.quantfunc(self.bias, scale_w*scale_x, torch.zeros(1).cuda())
                 new_quant_b = torch.clamp(new_quant_b, -n_w, n_w)
             else:
                 new_quant_b = None
@@ -373,8 +376,8 @@ class Quant_Conv2d_Int(Module):
             mult_res = F.conv2d(new_quant_x, new_quant_w, new_quant_b, self.stride, self.padding,
                         self.dilation, self.groups)
 
-            # return mult_res / (scale_w.view(1,-1,1,1).expand_as(mult_res)) / scale_x
-            return self.dequantfunc(mult_res, scale_x, scale_w.view(1,-1,1,1) )
+            return mult_res / (scale_w.view(1,-1,1,1).expand_as(mult_res)) / scale_x
+            # return self.dequantfunc(mult_res, scale_x, scale_w.view(1,-1,1,1) )
 
         else:
             w = self.weight
